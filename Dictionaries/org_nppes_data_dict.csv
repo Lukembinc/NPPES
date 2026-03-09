@@ -1,0 +1,77 @@
+,Column_Name,Data_Type,Col_Scope,Col_Category,Relevance
+0,Entity Type Code,float64,Organization,Provider & Organization,Irrelevant
+1,Provider Organization Name (Legal Business Name),object,Organization,Provider & Organization,Relevant
+2,Provider Other Organization Name,object,Organization,Provider & Organization,Backup
+3,Provider Other Organization Name Type Code,float64,Organization,Provider & Organization,Backup
+4,Parent Organization LBN,object,Organization,Provider & Organization,Relevant
+5,Employer Identification Number (EIN),object,Provider & Organization,Provider & Organization,Relevant
+6,Authorized Official Last Name,object,Provider & Organization,Name,Relevant
+7,Authorized Official First Name,object,Provider & Organization,Name,Relevant
+8,Authorized Official Middle Name,object,Provider & Organization,Name,Relevant
+9,Authorized Official Title or Position,object,Provider & Organization,Name,Relevant
+10,Authorized Official Telephone Number,float64,Provider & Organization,Name,Relevant
+11,Is Sole Proprietor,object,Provider & Organization,Provider & Organization,Relevant
+12,Is Organization Subpart,object,Provider & Organization,Provider & Organization,Relevant
+13,Parent Organization TIN,object,Provider & Organization,Provider & Organization,Relevant
+14,Authorized Official Name Prefix Text,object,Provider & Organization,Provider,Backup
+15,Authorized Official Name Suffix Text,object,Provider & Organization,Provider,Backup
+16,Authorized Official Credential Text,object,Provider & Organization,Provider,Backup
+17,NPI,int64,Provider,ID,Vital
+18,Provider Last Name (Legal Name),object,Provider,Name,Vital
+19,Provider First Name,object,Provider,Name,Vital
+20,Provider Middle Name,object,Provider,Name,Vital
+21,Provider First Line Business Practice Location Address,object,Provider,Practice Address,Vital
+22,Provider Second Line Business Practice Location Address,object,Provider,Practice Address,Vital
+23,Provider Business Practice Location Address City Name,object,Provider,Practice Address,Vital
+24,Provider Business Practice Location Address State Name,object,Provider,Practice Address,Vital
+25,Provider Business Practice Location Address Postal Code,float64,Provider,Practice Address,Vital
+26,Provider Business Practice Location Address Telephone Number,float64,Provider,Practice Address,Vital
+27,Provider Business Practice Location Address Fax Number,float64,Provider,Practice Address,Vital
+28,Last Update Date,object,Record,Provider,Vital
+29,Healthcare Provider Taxonomy Code_1,object,Provider,Taxonomy,Vital
+30,Provider License Number_1,object,Provider,License,Vital
+31,Provider License Number State Code_1,object,Provider,License,Vital
+32,Healthcare Provider Taxonomy Code_2,object,Provider,Taxonomy,Vital
+33,Provider License Number_2,object,Provider,License,Vital
+34,Provider License Number State Code_2,object,Provider,License,Vital
+35,Employer Identification Number (EIN),object,Provider & Organization,Provider & Organization,Relevant
+36,Provider Organization Name (Legal Business Name),object,Organization,Provider & Organization,Relevant
+37,Provider Name Prefix Text,object,Provider,Name,Relevant
+38,Provider Name Suffix Text,object,Provider,Name,Relevant
+39,Provider Credential Text,object,Provider,Name & License,Relevant
+40,Provider First Line Business Mailing Address,object,Provider,Mailing,Relevant
+41,Provider Second Line Business Mailing Address,object,Provider,Mailing,Relevant
+42,Provider Business Mailing Address City Name,object,Provider,Mailing,Relevant
+43,Provider Business Mailing Address State Name,object,Provider,Mailing,Relevant
+44,Provider Business Mailing Address Postal Code,float64,Provider,Mailing,Relevant
+45,Provider Business Mailing Address Country Code (If outside U.S.),object,Provider,Mailing,Relevant
+46,Provider Business Mailing Address Telephone Number,float64,Provider,Mailing,Relevant
+47,Provider Business Mailing Address Fax Number,float64,Provider,Mailing,Relevant
+48,Provider Business Practice Location Address Country Code (If outside U.S.),object,Provider,Practice Address,Relevant
+49,Provider Enumeration Date,object,Provider,License,Relevant
+50,Provider Gender Code,object,Provider,Provider,Relevant
+51,Authorized Official Last Name,object,Provider & Organization,Name,Relevant
+52,Authorized Official First Name,object,Provider & Organization,Name,Relevant
+53,Authorized Official Middle Name,object,Provider & Organization,Name,Relevant
+54,Authorized Official Title or Position,object,Provider & Organization,Name,Relevant
+55,Authorized Official Telephone Number,float64,Provider & Organization,Name,Relevant
+56,Healthcare Provider Primary Taxonomy Switch_1,object,Provider,Taxonomy,Relevant
+57,Healthcare Provider Primary Taxonomy Switch_2,object,Provider,Taxonomy,Relevant
+58,Healthcare Provider Taxonomy Code_3,object,Provider,Taxonomy,Relevant
+59,Provider License Number_3,object,Provider,License,Relevant
+60,Provider License Number State Code_3,object,Provider,License,Relevant
+61,Healthcare Provider Primary Taxonomy Switch_3,object,Provider,Taxonomy,Relevant
+62,Healthcare Provider Taxonomy Code_4,object,Provider,Taxonomy,Relevant
+63,Provider License Number_4,object,Provider,License,Relevant
+64,Provider License Number State Code_4,object,Provider,License,Relevant
+65,Healthcare Provider Primary Taxonomy Switch_4,object,Provider,Taxonomy,Relevant
+66,Healthcare Provider Taxonomy Code_5,object,Provider,Taxonomy,Relevant
+67,Provider License Number_5,object,Provider,License,Relevant
+68,Provider License Number State Code_5,object,Provider,License,Relevant
+69,Healthcare Provider Primary Taxonomy Switch_5,object,Provider,Taxonomy,Relevant
+70,Is Sole Proprietor,object,Provider & Organization,Provider & Organization,Relevant
+71,Is Organization Subpart,object,Provider & Organization,Provider & Organization,Relevant
+72,Parent Organization LBN,object,Organization,Provider & Organization,Relevant
+73,Parent Organization TIN,object,Provider & Organization,Provider & Organization,Relevant
+74,Healthcare Provider Taxonomy Group_1,object,Provider,Taxonomy,Relevant
+75,Certification Date,object,Provider,License,Relevant

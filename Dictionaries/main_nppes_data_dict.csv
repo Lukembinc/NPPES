@@ -1,0 +1,60 @@
+,Column_Name,Data_Type,Col_Scope,Col_Category,Relevance
+0,NPI,int64,Provider,ID,Vital
+1,Provider Last Name (Legal Name),object,Provider,Name,Vital
+2,Provider First Name,object,Provider,Name,Vital
+3,Provider Middle Name,object,Provider,Name,Vital
+4,Provider First Line Business Practice Location Address,object,Provider,Practice Address,Vital
+5,Provider Second Line Business Practice Location Address,object,Provider,Practice Address,Vital
+6,Provider Business Practice Location Address City Name,object,Provider,Practice Address,Vital
+7,Provider Business Practice Location Address State Name,object,Provider,Practice Address,Vital
+8,Provider Business Practice Location Address Postal Code,float64,Provider,Practice Address,Vital
+9,Provider Business Practice Location Address Telephone Number,float64,Provider,Practice Address,Vital
+10,Provider Business Practice Location Address Fax Number,float64,Provider,Practice Address,Vital
+11,Last Update Date,object,Record,Provider,Vital
+12,Healthcare Provider Taxonomy Code_1,object,Provider,Taxonomy,Vital
+13,Provider License Number_1,object,Provider,License,Vital
+14,Provider License Number State Code_1,object,Provider,License,Vital
+15,Healthcare Provider Taxonomy Code_2,object,Provider,Taxonomy,Vital
+16,Provider License Number_2,object,Provider,License,Vital
+17,Provider License Number State Code_2,object,Provider,License,Vital
+18,Employer Identification Number (EIN),object,Provider & Organization,Provider & Organization,Relevant
+19,Provider Organization Name (Legal Business Name),object,Organization,Provider & Organization,Relevant
+20,Provider Name Prefix Text,object,Provider,Name,Relevant
+21,Provider Name Suffix Text,object,Provider,Name,Relevant
+22,Provider Credential Text,object,Provider,Name & License,Relevant
+23,Provider First Line Business Mailing Address,object,Provider,Mailing,Relevant
+24,Provider Second Line Business Mailing Address,object,Provider,Mailing,Relevant
+25,Provider Business Mailing Address City Name,object,Provider,Mailing,Relevant
+26,Provider Business Mailing Address State Name,object,Provider,Mailing,Relevant
+27,Provider Business Mailing Address Postal Code,float64,Provider,Mailing,Relevant
+28,Provider Business Mailing Address Country Code (If outside U.S.),object,Provider,Mailing,Relevant
+29,Provider Business Mailing Address Telephone Number,float64,Provider,Mailing,Relevant
+30,Provider Business Mailing Address Fax Number,float64,Provider,Mailing,Relevant
+31,Provider Business Practice Location Address Country Code (If outside U.S.),object,Provider,Practice Address,Relevant
+32,Provider Enumeration Date,object,Provider,License,Relevant
+33,Provider Sex Code,object,Provider,Provider,Relevant
+34,Authorized Official Last Name,object,Provider & Organization,Name,Relevant
+35,Authorized Official First Name,object,Provider & Organization,Name,Relevant
+36,Authorized Official Middle Name,object,Provider & Organization,Name,Relevant
+37,Authorized Official Title or Position,object,Provider & Organization,Name,Relevant
+38,Authorized Official Telephone Number,float64,Provider & Organization,Name,Relevant
+39,Healthcare Provider Primary Taxonomy Switch_1,object,Provider,Taxonomy,Relevant
+40,Healthcare Provider Primary Taxonomy Switch_2,object,Provider,Taxonomy,Relevant
+41,Healthcare Provider Taxonomy Code_3,object,Provider,Taxonomy,Relevant
+42,Provider License Number_3,object,Provider,License,Relevant
+43,Provider License Number State Code_3,object,Provider,License,Relevant
+44,Healthcare Provider Primary Taxonomy Switch_3,object,Provider,Taxonomy,Relevant
+45,Healthcare Provider Taxonomy Code_4,object,Provider,Taxonomy,Relevant
+46,Provider License Number_4,object,Provider,License,Relevant
+47,Provider License Number State Code_4,object,Provider,License,Relevant
+48,Healthcare Provider Primary Taxonomy Switch_4,object,Provider,Taxonomy,Relevant
+49,Healthcare Provider Taxonomy Code_5,object,Provider,Taxonomy,Relevant
+50,Provider License Number_5,object,Provider,License,Relevant
+51,Provider License Number State Code_5,object,Provider,License,Relevant
+52,Healthcare Provider Primary Taxonomy Switch_5,object,Provider,Taxonomy,Relevant
+53,Is Sole Proprietor,object,Provider & Organization,Provider & Organization,Relevant
+54,Is Organization Subpart,object,Provider & Organization,Provider & Organization,Relevant
+55,Parent Organization LBN,object,Organization,Provider & Organization,Relevant
+56,Parent Organization TIN,object,Provider & Organization,Provider & Organization,Relevant
+57,Healthcare Provider Taxonomy Group_1,object,Provider,Taxonomy,Relevant
+58,Certification Date,object,Provider,License,Relevant
