@@ -1,0 +1,12 @@
+# Streamlit config for the NPPES dashboard.
+# Picked up automatically when you `streamlit run app.py` from this folder.
+
+[server]
+# Default is 200 MB. The "Show all matching" path on a large state can exceed
+# this, so we bump it for prototyping. Phase 4 (FastAPI backend) makes this
+# limitation moot because filtered slices are returned via paginated HTTP.
+maxMessageSize = 1000
+
+# Theme is intentionally not set — Streamlit will follow the user's system
+# preference (light/dark/auto) and expose a manual override in the hamburger
+# menu (Settings → Appearance).
