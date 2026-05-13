@@ -2,11 +2,13 @@
 NPPES Provider Lookup — Streamlit prototype (v2)
 =================================================
 
-What's new vs. v1:
+What's new in this revision:
+  * Top-of-page Dataset selector: "Full Data" vs "Dental"
+      - Full Data  -> reads <monthly_folder>/Full Data/<STATE> NPPES Extract.csv
+      - Dental     -> reads <monthly_folder>/Dental/<STATE> NPPES Dental.csv
   * Sidebar filters: city, ZIP (prefix match), name search, taxonomy code(s)
-  * Top-N preview (default 1,000 rows) with a "Show all matching" toggle
-  * Result count: matching / total
-  * NPI and ZIP are kept as strings so leading zeros and 9-digit ZIPs survive
+  * If the V2 enrichment columns are present (Spec_1, Grouping_1, County,
+    Deactivation Date, ...), they're surfaced so you can see the cleaned data.
 
 Run it from /Users/lukebincarousky/Downloads/NPPES/NPPES/dashboard:
 
@@ -25,12 +27,8 @@ limitation goes away entirely in Phase 4 when the FastAPI backend handles
 pagination.)
 
 Known follow-ups (not in this iteration):
-  * Taxonomy codes are shown as raw NUCC codes (e.g. '1223G0001X'). We can
-    swap in human-readable specialty labels by joining against the public
-    NUCC taxonomy CSV — small lift, called out below with a TODO.
-  * County filter requires joining ZIP → county via your existing
-    Geographic Data/ZIP_Locale_Detail.xls workbook. Easy to add next.
-  * Click-into-NPI profile page is the next step after filters feel right.
+  * Click-into-NPI profile page.
+  * Specialty (Spec_1..5) multiselect as a more human filter than raw taxonomy codes.
 """
 
 from __future__ import annotations
@@ -57,6 +55,14 @@ MONTHLY_FOLDER_RE = re.compile(
     r"^NPPES_Data_Dissemination_(?P<month>[A-Za-z]+)_(?P<year>\d{4})_V2$"
 )
 
+# Two recognized V2 datasets, each living in its own subfolder with its own
+# filename suffix. Keep these together so adding a third (e.g. "Physicians")
+# later is a one-line addition.
+DATASETS: dict[str, dict[str, str]] = {
+    "Full Data": {"subdir": "Full Data", "suffix": "NPPES Extract"},
+    "Dental":    {"subdir": "Dental",    "suffix": "NPPES Dental"},
+}
+
 # Column name constants — long strings, defined once for clarity
 COL_NPI = "NPI"
 COL_LAST = "Provider Last Name (Legal Name)"
@@ -67,16 +73,31 @@ COL_STATE = "Provider Business Practice Location Address State Name"
 COL_ZIP = "Provider Business Practice Location Address Postal Code"
 TAXONOMY_COLS = [f"Healthcare Provider Taxonomy Code_{i}" for i in range(1, 6)]
 
+# V2 cleaning adds these. They may not all be present in older folders.
+V2_ENRICHED_COLS = [
+    "County",
+    *[f"Grouping_{i}" for i in range(1, 6)],
+    *[f"Class_{i}" for i in range(1, 6)],
+    *[f"Spec_{i}" for i in range(1, 6)],
+    "Deactivation Date",
+]
+
 DEFAULT_PREVIEW_ROWS = 1000
 
 
 # ---------------------------------------------------------------------------
-# Data loading helpers
+# Data discovery
 # ---------------------------------------------------------------------------
 @st.cache_data
-def find_latest_states_dir(root: Path) -> tuple[Path, str]:
-    """Return (path to newest States/ folder, label like 'April 2026')."""
-    candidates: list[tuple[datetime, Path, str]] = []
+def find_latest_monthly_folder(root: Path) -> tuple[Path, str]:
+    """Return (newest monthly folder path, label like 'May 2026').
+
+    Picks the newest folder that has at least one recognized V2 dataset
+    subfolder (Full Data/ or Dental/). If none is found, falls back to the
+    newest monthly folder regardless — the UI will then show a useful error.
+    """
+    monthly: list[tuple[datetime, Path, str]] = []
+    monthly_with_v2: list[tuple[datetime, Path, str]] = []
     for dirpath, dirnames, _ in os.walk(root):
         for d in dirnames:
             m = MONTHLY_FOLDER_RE.match(d)
@@ -85,46 +106,62 @@ def find_latest_states_dir(root: Path) -> tuple[Path, str]:
             month_num = MONTH_NAMES.get(m.group("month"))
             if month_num is None:
                 continue
-            states_dir = Path(dirpath) / d / "States"
-            if states_dir.exists():
-                candidates.append(
-                    (datetime(int(m.group("year")), month_num, 1), states_dir, f"{m.group('month')} {m.group('year')}")
-                )
-    if not candidates:
+            folder = Path(dirpath) / d
+            label = f"{m.group('month')} {m.group('year')}"
+            key = datetime(int(m.group("year")), month_num, 1)
+            monthly.append((key, folder, label))
+            if any((folder / ds["subdir"]).exists() for ds in DATASETS.values()):
+                monthly_with_v2.append((key, folder, label))
+
+    chosen = monthly_with_v2 or monthly
+    if not chosen:
         raise FileNotFoundError(
-            f"No 'States/' subfolder found inside any monthly NPPES folder under {root}. "
-            f"Did you run run_monthly_split.py yet?"
+            f"No monthly NPPES_Data_Dissemination_<Month>_<Year>_V2 folders "
+            f"found under {root}."
         )
-    candidates.sort(key=lambda t: t[0])
-    _, path, label = candidates[-1]
+    chosen.sort(key=lambda t: t[0])
+    _, path, label = chosen[-1]
     return path, label
 
 
 @st.cache_data
-def list_states(states_dir: Path) -> list[str]:
-    """Return sorted list of state codes from filenames in the States/ folder."""
-    return sorted(
-        p.name.split(" ")[0]
-        for p in states_dir.glob("* NPPES Extract.csv")
-        if len(p.name.split(" ")[0]) == 2 and p.name.split(" ")[0].isalpha()
-    )
+def list_available_datasets(monthly_folder_str: str) -> list[str]:
+    """Return dataset names ('Full Data', 'Dental') whose subfolders exist."""
+    monthly_folder = Path(monthly_folder_str)
+    return [
+        name for name, meta in DATASETS.items()
+        if (monthly_folder / meta["subdir"]).exists()
+    ]
 
 
 @st.cache_data
-def load_state_csv(states_dir_str: str, state: str) -> pd.DataFrame:
-    """
-    Load and lightly normalize one state's per-provider CSV.
+def list_states(dataset_dir_str: str, suffix: str) -> list[str]:
+    """List state codes inferred from filenames in a dataset subfolder."""
+    dataset_dir = Path(dataset_dir_str)
+    pattern = f"* {suffix}.csv"
+    out: list[str] = []
+    for p in dataset_dir.glob(pattern):
+        # Filename is '<STATE> <suffix>.csv'; first token is the 2-letter state.
+        first = p.name.split(" ")[0]
+        if len(first) == 2 and first.isalpha():
+            out.append(first)
+    return sorted(set(out))
 
-    Cached: read once per (states_dir, state) per session.
-    """
-    path = Path(states_dir_str) / f"{state} NPPES Extract.csv"
-    df = pd.read_csv(path, low_memory=False, dtype=str)  # all strings = no float coercion of ZIPs/phones
 
-    # NPI as a clean string (no trailing .0 ever appears since we read as str, but be defensive)
+@st.cache_data
+def load_state_csv(dataset_dir_str: str, suffix: str, state: str) -> pd.DataFrame:
+    """Load and lightly normalize one state's per-provider CSV.
+
+    Cached per (dataset_dir, suffix, state) combination, so flipping
+    Full Data <-> Dental for the same state doesn't trash the prior cache.
+    """
+    path = Path(dataset_dir_str) / f"{state} {suffix}.csv"
+    # Read everything as strings to avoid float coercion of ZIPs/phones/NPIs.
+    df = pd.read_csv(path, low_memory=False, dtype=str)
+
     if COL_NPI in df.columns:
         df[COL_NPI] = df[COL_NPI].fillna("").str.replace(r"\.0$", "", regex=True)
 
-    # ZIP as string, drop any trailing ".0" that snuck in from a prior float pass
     if COL_ZIP in df.columns:
         df[COL_ZIP] = df[COL_ZIP].fillna("").str.replace(r"\.0$", "", regex=True)
 
@@ -133,10 +170,6 @@ def load_state_csv(states_dir_str: str, state: str) -> pd.DataFrame:
 
 @st.cache_data
 def unique_cities(df_index_key: str, cities_tuple: tuple[str, ...]) -> list[str]:
-    """
-    Return sorted unique cities for the dropdown. Wrapped in a cache so we don't
-    re-sort 600k rows every rerun. df_index_key is just for cache-busting per state.
-    """
     return sorted({c for c in cities_tuple if c})
 
 
@@ -166,7 +199,6 @@ def apply_filters(
 
     if name_query:
         q = name_query.strip().lower()
-        # Match across last/first/org names (case-insensitive substring)
         cols_to_search = [c for c in (COL_LAST, COL_FIRST, COL_ORG) if c in out.columns]
         mask = pd.Series(False, index=out.index)
         for c in cols_to_search:
@@ -174,7 +206,6 @@ def apply_filters(
         out = out[mask]
 
     if taxonomy_codes:
-        # Match if ANY of taxonomy_1..5 is in the selected list
         tax_cols_present = [c for c in TAXONOMY_COLS if c in out.columns]
         if tax_cols_present:
             mask = pd.Series(False, index=out.index)
@@ -191,21 +222,43 @@ def apply_filters(
 st.set_page_config(page_title="NPPES Provider Lookup", layout="wide")
 st.title("NPPES Provider Lookup")
 
-# --- Resolve the data source ------------------------------------------------
+# --- Resolve the monthly data source ----------------------------------------
 try:
-    states_dir, month_label = find_latest_states_dir(NPPES_ROOT)
+    monthly_folder, month_label = find_latest_monthly_folder(NPPES_ROOT)
 except FileNotFoundError as e:
     st.error(str(e))
     st.stop()
 
-st.caption(f"Data source: {month_label} extract — {states_dir}")
+# --- Top-of-page dataset selector -------------------------------------------
+available_datasets = list_available_datasets(str(monthly_folder))
+if not available_datasets:
+    st.error(
+        f"Found monthly folder '{monthly_folder.name}' but no Full Data/ or Dental/ "
+        f"subfolder inside it. Run V2_run_monthly_split.py first."
+    )
+    st.stop()
 
-# --- Sidebar: state + filters ----------------------------------------------
+dataset_choice = st.radio(
+    "Dataset",
+    options=available_datasets,
+    horizontal=True,
+    help="Full Data = every provider in the state. "
+         "Dental = only providers whose taxonomy maps to 'Dental Providers'.",
+)
+dataset_meta = DATASETS[dataset_choice]
+dataset_dir = monthly_folder / dataset_meta["subdir"]
+suffix = dataset_meta["suffix"]
+
+st.caption(
+    f"Data source: **{dataset_choice}** — {month_label} extract — `{dataset_dir}`"
+)
+
+# --- Sidebar: state + filters -----------------------------------------------
 st.sidebar.header("Filters")
 
-states = list_states(states_dir)
+states = list_states(str(dataset_dir), suffix)
 if not states:
-    st.warning("No per-state CSVs found in this States/ folder.")
+    st.warning(f"No per-state CSVs found in {dataset_dir}.")
     st.stop()
 
 state = st.sidebar.selectbox(
@@ -215,10 +268,13 @@ state = st.sidebar.selectbox(
 )
 
 with st.spinner(f"Loading {state}…"):
-    df = load_state_csv(str(states_dir), state)
+    df = load_state_csv(str(dataset_dir), suffix, state)
 
 # City: dropdown of unique values within the chosen state
-city_options = unique_cities(state, tuple(df[COL_CITY].fillna("").tolist()) if COL_CITY in df.columns else ())
+city_options = unique_cities(
+    f"{dataset_choice}:{state}",
+    tuple(df[COL_CITY].fillna("").tolist()) if COL_CITY in df.columns else (),
+)
 city = st.sidebar.selectbox(
     "City",
     options=["(any)"] + city_options,
@@ -239,17 +295,17 @@ name_query = st.sidebar.text_input(
 ).strip()
 
 # Taxonomy: multiselect of unique codes present in this state
-# TODO: join against the NUCC taxonomy CSV to show 'Dentist (1223G0001X)' instead of raw codes.
 all_tax_codes: list[str] = []
 for c in TAXONOMY_COLS:
     if c in df.columns:
         all_tax_codes.extend(df[c].fillna("").tolist())
-taxonomy_options = unique_taxonomies(state, tuple(all_tax_codes))
+taxonomy_options = unique_taxonomies(f"{dataset_choice}:{state}", tuple(all_tax_codes))
 taxonomy_codes = st.sidebar.multiselect(
     "Taxonomy codes (any match)",
     options=taxonomy_options,
     default=[],
-    help="NUCC provider taxonomy codes. We can swap these for human-readable specialty labels next.",
+    help="NUCC provider taxonomy codes. V2 data also has Spec_1..5 columns "
+         "with human-readable specialty names — view them in the table.",
 )
 
 # --- Apply filters ----------------------------------------------------------
@@ -258,7 +314,10 @@ filtered = apply_filters(df, city_filter, zip_prefix, name_query, taxonomy_codes
 # --- Result summary + table -------------------------------------------------
 total = len(df)
 match = len(filtered)
-st.markdown(f"**{match:,}** of **{total:,}** providers match in {state}.")
+st.markdown(
+    f"**{match:,}** of **{total:,}** providers match in **{state}** "
+    f"({dataset_choice})."
+)
 
 show_all = st.checkbox(
     f"Show all {match:,} matching rows (default: top {DEFAULT_PREVIEW_ROWS:,})",
