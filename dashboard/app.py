@@ -6,7 +6,9 @@ What's new in this revision:
   * Top-of-page Dataset selector: "Full Data" vs "Dental"
       - Full Data  -> reads <monthly_folder>/Full Data/<STATE> NPPES Extract.csv
       - Dental     -> reads <monthly_folder>/Dental/<STATE> NPPES Dental.csv
-  * Sidebar filters: city, ZIP (prefix match), name search, taxonomy code(s)
+  * Sidebar filters: city, ZIP (prefix match), name search,
+    human-readable Specialty (Spec_1..5) — falls back to raw taxonomy
+    codes only when Spec_* columns aren't present.
   * If the V2 enrichment columns are present (Spec_1, Grouping_1, County,
     Deactivation Date, ...), they're surfaced so you can see the cleaned data.
 
@@ -72,6 +74,7 @@ COL_CITY = "Provider Business Practice Location Address City Name"
 COL_STATE = "Provider Business Practice Location Address State Name"
 COL_ZIP = "Provider Business Practice Location Address Postal Code"
 TAXONOMY_COLS = [f"Healthcare Provider Taxonomy Code_{i}" for i in range(1, 6)]
+SPEC_COLS = [f"Spec_{i}" for i in range(1, 6)]
 
 # V2 cleaning adds these. They may not all be present in older folders.
 V2_ENRICHED_COLS = [
@@ -178,6 +181,12 @@ def unique_taxonomies(df_index_key: str, codes_tuple: tuple[str, ...]) -> list[s
     return sorted({c for c in codes_tuple if c})
 
 
+@st.cache_data
+def unique_specialties(df_index_key: str, specs_tuple: tuple[str, ...]) -> list[str]:
+    """Sorted unique human-readable specialties from the Spec_1..5 columns."""
+    return sorted({s for s in specs_tuple if s})
+
+
 # ---------------------------------------------------------------------------
 # Filtering
 # ---------------------------------------------------------------------------
@@ -186,7 +195,7 @@ def apply_filters(
     city: str | None,
     zip_prefix: str,
     name_query: str,
-    taxonomy_codes: list[str],
+    specialties: list[str],
 ) -> pd.DataFrame:
     """Apply sidebar filters to the loaded state DataFrame."""
     out = df
@@ -205,12 +214,13 @@ def apply_filters(
             mask = mask | out[c].fillna("").str.lower().str.contains(q, regex=False)
         out = out[mask]
 
-    if taxonomy_codes:
-        tax_cols_present = [c for c in TAXONOMY_COLS if c in out.columns]
-        if tax_cols_present:
+    if specialties:
+        # Match if ANY of Spec_1..5 equals one of the selected specialties.
+        spec_cols_present = [c for c in SPEC_COLS if c in out.columns]
+        if spec_cols_present:
             mask = pd.Series(False, index=out.index)
-            for c in tax_cols_present:
-                mask = mask | out[c].isin(taxonomy_codes)
+            for c in spec_cols_present:
+                mask = mask | out[c].isin(specialties)
             out = out[mask]
 
     return out
@@ -294,22 +304,50 @@ name_query = st.sidebar.text_input(
     value="",
 ).strip()
 
-# Taxonomy: multiselect of unique codes present in this state
-all_tax_codes: list[str] = []
-for c in TAXONOMY_COLS:
-    if c in df.columns:
-        all_tax_codes.extend(df[c].fillna("").tolist())
-taxonomy_options = unique_taxonomies(f"{dataset_choice}:{state}", tuple(all_tax_codes))
-taxonomy_codes = st.sidebar.multiselect(
-    "Taxonomy codes (any match)",
-    options=taxonomy_options,
-    default=[],
-    help="NUCC provider taxonomy codes. V2 data also has Spec_1..5 columns "
-         "with human-readable specialty names — view them in the table.",
-)
+# Specialty: multiselect of unique human-readable specialties (Spec_1..5)
+# from the cleaned V2 data. Falls back to raw taxonomy codes only if the
+# Spec_* columns aren't present (older / unmigrated folder).
+spec_cols_present = [c for c in SPEC_COLS if c in df.columns]
+if spec_cols_present:
+    all_specs: list[str] = []
+    for c in spec_cols_present:
+        all_specs.extend(df[c].fillna("").tolist())
+    specialty_options = unique_specialties(f"{dataset_choice}:{state}", tuple(all_specs))
+    specialties = st.sidebar.multiselect(
+        "Specialty (any match)",
+        options=specialty_options,
+        default=[],
+        help="Human-readable specialty from the NUCC taxonomy "
+             "(Spec_1..5 columns added by V2 cleaning). "
+             "Match is any-of across the five Spec_N columns.",
+    )
+else:
+    # Older folders without V2 enrichment — keep raw taxonomy code filter as fallback.
+    all_tax_codes: list[str] = []
+    for c in TAXONOMY_COLS:
+        if c in df.columns:
+            all_tax_codes.extend(df[c].fillna("").tolist())
+    taxonomy_options = unique_taxonomies(f"{dataset_choice}:{state}", tuple(all_tax_codes))
+    specialties = st.sidebar.multiselect(
+        "Taxonomy codes (any match)",
+        options=taxonomy_options,
+        default=[],
+        help="Spec_1..5 columns not found in this dataset, "
+             "falling back to raw NUCC taxonomy codes.",
+    )
+    # apply_filters expects Spec_* names; with no Spec_* columns it will
+    # short-circuit, so we instead inline a taxonomy-code match here.
+    if specialties:
+        tax_cols_present = [c for c in TAXONOMY_COLS if c in df.columns]
+        if tax_cols_present:
+            tmask = pd.Series(False, index=df.index)
+            for c in tax_cols_present:
+                tmask = tmask | df[c].isin(specialties)
+            df = df[tmask]
+        specialties = []  # already applied above
 
 # --- Apply filters ----------------------------------------------------------
-filtered = apply_filters(df, city_filter, zip_prefix, name_query, taxonomy_codes)
+filtered = apply_filters(df, city_filter, zip_prefix, name_query, specialties)
 
 # --- Result summary + table -------------------------------------------------
 total = len(df)
