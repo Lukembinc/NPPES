@@ -260,8 +260,8 @@ def apply_filters(
 # ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="NPPES Provider Lookup", layout="wide")
-st.title("NPPES Provider Lookup")
+st.set_page_config(page_title="NPPES Dental Provider Lookup", layout="wide")
+st.title("NPPES Dental Provider Lookup")
 
 # --- Resolve the monthly data source ----------------------------------------
 try:
@@ -270,29 +270,22 @@ except FileNotFoundError as e:
     st.error(str(e))
     st.stop()
 
-# --- Top-of-page dataset selector -------------------------------------------
-available_datasets = list_available_datasets(str(monthly_folder))
-if not available_datasets:
-    st.error(
-        f"Found monthly folder '{monthly_folder.name}' but no Full Data/ or Dental/ "
-        f"subfolder inside it. Run V2_run_monthly_split.py first."
-    )
-    st.stop()
-
-dataset_choice = st.radio(
-    "Dataset",
-    options=available_datasets,
-    horizontal=True,
-    help="Full Data = every provider in the state. "
-         "Dental = only providers whose taxonomy maps to 'Dental Providers'.",
-)
+# --- Dataset is fixed to Dental --------------------------------------------
+# The deployed build only ships the Dental Parquet subset, and the cloud
+# version is intentionally dental-only. We keep DATASETS as a config block
+# (rather than inlining the path) so a future "Full Data" mode is a
+# one-line revival of the radio above.
+dataset_choice = "Dental"
 dataset_meta = DATASETS[dataset_choice]
 dataset_dir = monthly_folder / dataset_meta["subdir"]
 suffix = dataset_meta["suffix"]
 
-st.caption(
-    f"Data source: **{dataset_choice}** — {month_label} extract — `{dataset_dir}`"
-)
+if not dataset_dir.exists():
+    st.error(
+        f"Found monthly folder '{monthly_folder.name}' but no Dental/ subfolder "
+        f"inside it. Run V2_run_monthly_split.py (or the Parquet conversion step) first."
+    )
+    st.stop()
 
 # --- Sidebar: state + filters -----------------------------------------------
 st.sidebar.header("Filters")
@@ -336,21 +329,33 @@ name_query = st.sidebar.text_input(
 ).strip()
 
 # Specialty: multiselect of unique human-readable specialties (Spec_1..5)
-# from the cleaned V2 data. Falls back to raw taxonomy codes only if the
-# Spec_* columns aren't present (older / unmigrated folder).
+# from the cleaned V2 data. In the Dental dataset, many providers also have
+# non-dental taxonomies in Spec_2..5 (e.g. "Student, Health Care" or other
+# physician roles). We restrict the option list to specs whose aligned
+# Grouping_N == "Dental Providers", so the dropdown surfaces only dental
+# roles (Dentist, Dental Hygienist, Orthodontics, ...).
 spec_cols_present = [c for c in SPEC_COLS if c in df.columns]
 if spec_cols_present:
-    all_specs: list[str] = []
+    dental_specs: list[str] = []
     for c in spec_cols_present:
-        all_specs.extend(df[c].fillna("").tolist())
-    specialty_options = unique_specialties(f"{dataset_choice}:{state}", tuple(all_specs))
+        # The Grouping column at the same index N is the gate.
+        g = c.replace("Spec_", "Grouping_")
+        if g in df.columns:
+            dental_mask = df[g] == "Dental Providers"
+            dental_specs.extend(df.loc[dental_mask, c].fillna("").tolist())
+        else:
+            # No Grouping_N to gate on — fall back to all values from this slot.
+            dental_specs.extend(df[c].fillna("").tolist())
+    specialty_options = unique_specialties(
+        f"{dataset_choice}:{state}:dental_only", tuple(dental_specs)
+    )
     specialties = st.sidebar.multiselect(
         "Specialty (any match)",
         options=specialty_options,
         default=[],
-        help="Human-readable specialty from the NUCC taxonomy "
-             "(Spec_1..5 columns added by V2 cleaning). "
-             "Match is any-of across the five Spec_N columns.",
+        help="Dental specialties only (Spec_1..5 values where the matching "
+             "Grouping_N is 'Dental Providers'). Match is any-of across the "
+             "five Spec_N columns.",
     )
 else:
     # Older folders without V2 enrichment — keep raw taxonomy code filter as fallback.
