@@ -1,1 +1,18 @@
 .DS_Store
+
+# Python build artifacts
+__pycache__/
+*.pyc
+
+# Belt-and-suspenders: never commit raw NPPES dissemination dumps or the
+# multi-GB Full Data CSV split. Only the Parquet build under data/ is
+# intended to be tracked.
+NPPES_Data_Dissemination_*/
+!data/NPPES_Data_Dissemination_*/
+data/*/Full Data/
+*.csv.gz
+npidata_pfile_*.csv
+endpoint_pfile_*.csv
+othername_pfile_*.csv
+pl_pfile_*.csv
+NPPES Deactivated NPI Report *.xlsx

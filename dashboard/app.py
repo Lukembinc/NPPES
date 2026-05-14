@@ -11,22 +11,31 @@ What's new in this revision:
     codes only when Spec_* columns aren't present.
   * If the V2 enrichment columns are present (Spec_1, Grouping_1, County,
     Deactivation Date, ...), they're surfaced so you can see the cleaned data.
+  * Per-state files may be either Parquet (preferred — what the deployed
+    Streamlit Cloud build ships) or CSV (local dev). The loader tries
+    Parquet first and falls back to CSV automatically.
 
-Run it from /Users/lukebincarousky/Downloads/NPPES/NPPES/dashboard:
+Data root resolution (in priority order):
+  1. NPPES_ROOT env var, if set (e.g. local dev pointing at
+     /Users/lukebincarousky/Downloads/NPPES).
+  2. The repo's bundled `data/` folder (sibling of `dashboard/`). This is
+     what Streamlit Cloud sees — it contains a Dental-only Parquet build.
 
-    streamlit run app.py --server.maxMessageSize=1000
+Run locally (against your full /Users/.../Downloads/NPPES tree):
 
-Or if you cd into that folder first, `.streamlit/config.toml` next to this file
-applies the same setting automatically:
+    cd "/Users/lukebincarousky/Downloads/NPPES/NPPES/dashboard"
+    NPPES_ROOT="/Users/lukebincarousky/Downloads/NPPES" streamlit run app.py
+
+Run locally (against the repo's bundled Dental Parquet data — same as cloud):
 
     cd "/Users/lukebincarousky/Downloads/NPPES/NPPES/dashboard"
     streamlit run app.py
 
-Why the maxMessageSize bump? Even with filters, if you toggle "Show all matching"
-on a big state with no filters applied, the WebSocket payload can exceed the
-default 200 MB cap. 1000 MB gives plenty of headroom for prototyping. (This
-limitation goes away entirely in Phase 4 when the FastAPI backend handles
-pagination.)
+Why the maxMessageSize bump in .streamlit/config.toml? Even with filters,
+if you toggle "Show all matching" on a big state with no filters applied,
+the WebSocket payload can exceed the default 200 MB cap. 1000 MB gives
+plenty of headroom for prototyping. (This limitation goes away entirely
+in Phase 4 when the FastAPI backend handles pagination.)
 
 Known follow-ups (not in this iteration):
   * Click-into-NPI profile page.
@@ -47,7 +56,12 @@ import streamlit as st
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-NPPES_ROOT = Path("/Users/lukebincarousky/Downloads/NPPES")
+# Data root resolution. Env var wins so a local dev session can keep pointing
+# at the full ~/Downloads/NPPES tree (with Full Data CSVs) without code changes.
+# Default is the repo's bundled `data/` folder — this is what ships in the
+# GitHub repo and what Streamlit Cloud uses (Dental-only, Parquet).
+_REPO_DATA = Path(__file__).resolve().parent.parent / "data"
+NPPES_ROOT = Path(os.environ.get("NPPES_ROOT") or _REPO_DATA)
 
 MONTH_NAMES = {
     "January": 1, "February": 2, "March": 3, "April": 4, "May": 5, "June": 6,
@@ -139,28 +153,45 @@ def list_available_datasets(monthly_folder_str: str) -> list[str]:
 
 @st.cache_data
 def list_states(dataset_dir_str: str, suffix: str) -> list[str]:
-    """List state codes inferred from filenames in a dataset subfolder."""
+    """List state codes inferred from filenames in a dataset subfolder.
+
+    Looks for both '<STATE> <suffix>.parquet' (preferred) and
+    '<STATE> <suffix>.csv' (local-dev fallback).
+    """
     dataset_dir = Path(dataset_dir_str)
-    pattern = f"* {suffix}.csv"
-    out: list[str] = []
-    for p in dataset_dir.glob(pattern):
-        # Filename is '<STATE> <suffix>.csv'; first token is the 2-letter state.
-        first = p.name.split(" ")[0]
-        if len(first) == 2 and first.isalpha():
-            out.append(first)
-    return sorted(set(out))
+    out: set[str] = set()
+    for ext in (".parquet", ".csv"):
+        for p in dataset_dir.glob(f"* {suffix}{ext}"):
+            # Filename is '<STATE> <suffix>.<ext>'; first token is the 2-letter state.
+            first = p.name.split(" ")[0]
+            if len(first) == 2 and first.isalpha():
+                out.add(first)
+    return sorted(out)
 
 
 @st.cache_data
 def load_state_csv(dataset_dir_str: str, suffix: str, state: str) -> pd.DataFrame:
-    """Load and lightly normalize one state's per-provider CSV.
+    """Load and lightly normalize one state's per-provider file.
 
+    Tries Parquet first (what the repo ships for the deployed build), then
+    falls back to CSV (the local /Users/.../Downloads/NPPES tree).
     Cached per (dataset_dir, suffix, state) combination, so flipping
     Full Data <-> Dental for the same state doesn't trash the prior cache.
     """
-    path = Path(dataset_dir_str) / f"{state} {suffix}.csv"
-    # Read everything as strings to avoid float coercion of ZIPs/phones/NPIs.
-    df = pd.read_csv(path, low_memory=False, dtype=str)
+    dataset_dir = Path(dataset_dir_str)
+    parquet_path = dataset_dir / f"{state} {suffix}.parquet"
+    csv_path = dataset_dir / f"{state} {suffix}.csv"
+
+    if parquet_path.exists():
+        # Parquet preserves string dtype; no low_memory/dtype kwargs needed.
+        df = pd.read_parquet(parquet_path, engine="pyarrow")
+    elif csv_path.exists():
+        # Read everything as strings to avoid float coercion of ZIPs/phones/NPIs.
+        df = pd.read_csv(csv_path, low_memory=False, dtype=str)
+    else:
+        raise FileNotFoundError(
+            f"Neither {parquet_path.name} nor {csv_path.name} found in {dataset_dir}."
+        )
 
     if COL_NPI in df.columns:
         df[COL_NPI] = df[COL_NPI].fillna("").str.replace(r"\.0$", "", regex=True)
