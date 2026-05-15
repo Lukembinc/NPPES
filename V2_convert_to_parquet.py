@@ -92,16 +92,22 @@ def convert_csv_to_parquet():
             
         print(f"Found {len(csv_files)} CSV files to convert.")
         
+        # Explicitly cast columns that must be strings to avoid numeric inference
+        # (which leads to AttributeErrors in the dashboard and dropped leading zeros).
+        DTYPE_MAP = {
+            "NPI": str,
+            "Provider Business Practice Location Address Postal Code": str,
+            "Provider Business Mailing Address Postal Code": str,
+        }
+
         for csv_path in csv_files:
             parquet_name = csv_path.with_suffix(".parquet").name
             target_path = target_dental_dir / parquet_name
             
             print(f"Converting {csv_path.name} -> {parquet_name}...", end="", flush=True)
             
-            # Read CSV and write Parquet
-            # We use low_memory=False to avoid DtypeWarnings, 
-            # and keep all columns as they are from the cleaned CSV.
-            df = pd.read_csv(csv_path, low_memory=False)
+            # Read CSV with explicit string types for critical columns
+            df = pd.read_csv(csv_path, low_memory=False, dtype=DTYPE_MAP)
             df.to_parquet(target_path, index=False, engine='pyarrow')
             
             print(" Done.")
