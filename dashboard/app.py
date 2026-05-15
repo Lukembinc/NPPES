@@ -194,10 +194,10 @@ def load_state_csv(dataset_dir_str: str, suffix: str, state: str) -> pd.DataFram
         )
 
     if COL_NPI in df.columns:
-        df[COL_NPI] = df[COL_NPI].fillna("").str.replace(r"\.0$", "", regex=True)
+        df[COL_NPI] = df[COL_NPI].fillna("").astype(str).str.replace(r"\.0$", "", regex=True)
 
     if COL_ZIP in df.columns:
-        df[COL_ZIP] = df[COL_ZIP].fillna("").str.replace(r"\.0$", "", regex=True)
+        df[COL_ZIP] = df[COL_ZIP].fillna("").astype(str).str.replace(r"\.0$", "", regex=True)
 
     return df
 
@@ -242,7 +242,7 @@ def apply_filters(
         cols_to_search = [c for c in (COL_LAST, COL_FIRST, COL_ORG) if c in out.columns]
         mask = pd.Series(False, index=out.index)
         for c in cols_to_search:
-            mask = mask | out[c].fillna("").str.lower().str.contains(q, regex=False)
+            mask = mask | out[c].fillna("").astype(str).str.lower().str.contains(q, regex=False)
         out = out[mask]
 
     if specialties:
