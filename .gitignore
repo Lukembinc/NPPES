@@ -1,5 +1,3 @@
-.DS_Store
-
 # Python build artifacts
 __pycache__/
 *.pyc
@@ -16,3 +14,4 @@ endpoint_pfile_*.csv
 othername_pfile_*.csv
 pl_pfile_*.csv
 NPPES Deactivated NPI Report *.xlsx
+.DS_Store
