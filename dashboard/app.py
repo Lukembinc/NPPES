@@ -1,19 +1,34 @@
 """
-NPPES Provider Lookup — Streamlit prototype (v2)
+NPPES Provider Lookup — Streamlit prototype (v3)
 =================================================
 
 What's new in this revision:
+  * Updated for the V3 dental schema produced by V3_run_monthly_split.py.
+    The dental files now have renamed/reordered columns; in particular:
+      - "Provider Business Practice Location Address City Name"   -> "Practice Address City"
+      - "Provider Business Practice Location Address State Name"  -> "Practice Address State"
+      - "Provider Business Practice Location Address Postal Code" -> "Practice Address ZipCode"
+      - "Spec_N" / "Grouping_N" / "Class_N" / "Code_N"            -> "Specialty N" / "Specialty Grouping N" / "Specialty Class N" / "Specialty Code N"
+      - "County"                                                  -> "Practice Address County"
+      - "Provider Enumeration Date"                               -> "Enumeration Date"
+    The raw "Healthcare Provider Taxonomy Code_1..5" columns are dropped
+    in the V3 dental output (already enriched into Specialty Code 1..5),
+    so the old "taxonomy code fallback" filter is gone.
   * Top-of-page Dataset selector: "Full Data" vs "Dental"
-      - Full Data  -> reads <monthly_folder>/Full Data/<STATE> NPPES Extract.csv
-      - Dental     -> reads <monthly_folder>/Dental/<STATE> NPPES Dental.csv
+      - Full Data  -> reads <monthly_folder>/Full Data/<STATE> NPPES Extract.csv  (V2 schema; Full Data CSV is unchanged in V3)
+      - Dental     -> reads <monthly_folder>/Dental/<STATE> NPPES Dental.csv      (V3 schema)
   * Sidebar filters: city, ZIP (prefix match), name search,
-    human-readable Specialty (Spec_1..5) — falls back to raw taxonomy
-    codes only when Spec_* columns aren't present.
-  * If the V2 enrichment columns are present (Spec_1, Grouping_1, County,
-    Deactivation Date, ...), they're surfaced so you can see the cleaned data.
+    human-readable Specialty (Specialty 1..5).
+  * If the V3 enrichment columns are present (Specialty 1, Specialty
+    Grouping 1, Practice Address County, Deactivation Date, ...), they're
+    surfaced so you can see the cleaned data.
   * Per-state files may be either Parquet (preferred — what the deployed
     Streamlit Cloud build ships) or CSV (local dev). The loader tries
     Parquet first and falls back to CSV automatically.
+
+Note: this dashboard is fully V3 now. If you have older V2 parquet files
+in the data/ folder, the City/ZIP columns won't be found and the page
+will error. Re-run V3_convert_to_parquet.py to refresh them.
 
 Data root resolution (in priority order):
   1. NPPES_ROOT env var, if set (e.g. local dev pointing at
@@ -39,7 +54,6 @@ in Phase 4 when the FastAPI backend handles pagination.)
 
 Known follow-ups (not in this iteration):
   * Click-into-NPI profile page.
-  * Specialty (Spec_1..5) multiselect as a more human filter than raw taxonomy codes.
 """
 
 from __future__ import annotations
@@ -71,31 +85,40 @@ MONTHLY_FOLDER_RE = re.compile(
     r"^NPPES_Data_Dissemination_(?P<month>[A-Za-z]+)_(?P<year>\d{4})_V2$"
 )
 
-# Two recognized V2 datasets, each living in its own subfolder with its own
-# filename suffix. Keep these together so adding a third (e.g. "Physicians")
-# later is a one-line addition.
+# Two recognized datasets, each living in its own subfolder with its own
+# filename suffix. The Dental subset uses the V3 renamed schema; the Full
+# Data CSVs still use the raw V2 column names (V3 left Full Data
+# untouched). The dashboard is dental-by-default, so the V3 column names
+# below drive the UI.
 DATASETS: dict[str, dict[str, str]] = {
     "Full Data": {"subdir": "Full Data", "suffix": "NPPES Extract"},
     "Dental":    {"subdir": "Dental",    "suffix": "NPPES Dental"},
 }
 
-# Column name constants — long strings, defined once for clarity
+# Column name constants — V3 dental schema.
+# Identity columns kept their original names in the rename step.
 COL_NPI = "NPI"
 COL_LAST = "Provider Last Name (Legal Name)"
 COL_FIRST = "Provider First Name"
 COL_ORG = "Provider Organization Name (Legal Business Name)"
-COL_CITY = "Provider Business Practice Location Address City Name"
-COL_STATE = "Provider Business Practice Location Address State Name"
-COL_ZIP = "Provider Business Practice Location Address Postal Code"
-TAXONOMY_COLS = [f"Healthcare Provider Taxonomy Code_{i}" for i in range(1, 6)]
-SPEC_COLS = [f"Spec_{i}" for i in range(1, 6)]
+# Practice address columns are renamed in V3.
+COL_CITY = "Practice Address City"
+COL_STATE = "Practice Address State"
+COL_ZIP = "Practice Address ZipCode"
 
-# V2 cleaning adds these. They may not all be present in older folders.
-V2_ENRICHED_COLS = [
-    "County",
-    *[f"Grouping_{i}" for i in range(1, 6)],
-    *[f"Class_{i}" for i in range(1, 6)],
-    *[f"Spec_{i}" for i in range(1, 6)],
+# Specialty columns (human-readable Display Name from the NUCC join).
+SPEC_COLS = [f"Specialty {i}" for i in range(1, 6)]
+# Paired Grouping columns at the same index — used to restrict the
+# Specialty filter options to dental roles only.
+GROUPING_COLS = [f"Specialty Grouping {i}" for i in range(1, 6)]
+
+# V3 cleaning adds these on top of the base NPPES columns. Listed for
+# documentation and so a future "show only enriched" toggle can use them.
+V3_ENRICHED_COLS = [
+    "Practice Address County",
+    *GROUPING_COLS,
+    *[f"Specialty Class {i}" for i in range(1, 6)],
+    *SPEC_COLS,
     "Deactivation Date",
 ]
 
@@ -109,7 +132,7 @@ DEFAULT_PREVIEW_ROWS = 1000
 def find_latest_monthly_folder(root: Path) -> tuple[Path, str]:
     """Return (newest monthly folder path, label like 'May 2026').
 
-    Picks the newest folder that has at least one recognized V2 dataset
+    Picks the newest folder that has at least one recognized dataset
     subfolder (Full Data/ or Dental/). If none is found, falls back to the
     newest monthly folder regardless — the UI will then show a useful error.
     """
@@ -208,13 +231,8 @@ def unique_cities(df_index_key: str, cities_tuple: tuple[str, ...]) -> list[str]
 
 
 @st.cache_data
-def unique_taxonomies(df_index_key: str, codes_tuple: tuple[str, ...]) -> list[str]:
-    return sorted({c for c in codes_tuple if c})
-
-
-@st.cache_data
 def unique_specialties(df_index_key: str, specs_tuple: tuple[str, ...]) -> list[str]:
-    """Sorted unique human-readable specialties from the Spec_1..5 columns."""
+    """Sorted unique human-readable specialties from the Specialty 1..5 columns."""
     return sorted({s for s in specs_tuple if s})
 
 
@@ -246,7 +264,7 @@ def apply_filters(
         out = out[mask]
 
     if specialties:
-        # Match if ANY of Spec_1..5 equals one of the selected specialties.
+        # Match if ANY of Specialty 1..5 equals one of the selected specialties.
         spec_cols_present = [c for c in SPEC_COLS if c in out.columns]
         if spec_cols_present:
             mask = pd.Series(False, index=out.index)
@@ -283,7 +301,8 @@ suffix = dataset_meta["suffix"]
 if not dataset_dir.exists():
     st.error(
         f"Found monthly folder '{monthly_folder.name}' but no Dental/ subfolder "
-        f"inside it. Run V2_run_monthly_split.py (or the Parquet conversion step) first."
+        f"inside it. Run V3_run_monthly_split.py (and V3_convert_to_parquet.py "
+        f"for the Parquet build) first."
     )
     st.stop()
 
@@ -328,24 +347,27 @@ name_query = st.sidebar.text_input(
     value="",
 ).strip()
 
-# Specialty: multiselect of unique human-readable specialties (Spec_1..5)
-# from the cleaned V2 data. In the Dental dataset, many providers also have
-# non-dental taxonomies in Spec_2..5 (e.g. "Student, Health Care" or other
-# physician roles). We restrict the option list to specs whose aligned
-# Grouping_N == "Dental Providers", so the dropdown surfaces only dental
-# roles (Dentist, Dental Hygienist, Orthodontics, ...).
+# Specialty: multiselect of unique human-readable specialties (Specialty 1..5)
+# from the cleaned V3 data. In the Dental dataset, many providers also have
+# non-dental taxonomies in Specialty 2..5 (e.g. "Student, Health Care" or
+# other physician roles). We restrict the option list to specs whose aligned
+# Specialty Grouping N == "Dental Providers", so the dropdown surfaces only
+# dental roles (Dentist, Dental Hygienist, Orthodontics, ...).
 spec_cols_present = [c for c in SPEC_COLS if c in df.columns]
 if spec_cols_present:
     dental_specs: list[str] = []
-    for c in spec_cols_present:
-        # The Grouping column at the same index N is the gate.
-        g = c.replace("Spec_", "Grouping_")
-        if g in df.columns:
-            dental_mask = df[g] == "Dental Providers"
-            dental_specs.extend(df.loc[dental_mask, c].fillna("").tolist())
+    # Iterate by index so we can pair Specialty N with Specialty Grouping N
+    # without string-replace gymnastics. SPEC_COLS and GROUPING_COLS are
+    # parallel lists.
+    for spec_col, group_col in zip(SPEC_COLS, GROUPING_COLS):
+        if spec_col not in df.columns:
+            continue
+        if group_col in df.columns:
+            dental_mask = df[group_col] == "Dental Providers"
+            dental_specs.extend(df.loc[dental_mask, spec_col].fillna("").tolist())
         else:
-            # No Grouping_N to gate on — fall back to all values from this slot.
-            dental_specs.extend(df[c].fillna("").tolist())
+            # No Grouping column to gate on — fall back to all values from this slot.
+            dental_specs.extend(df[spec_col].fillna("").tolist())
     specialty_options = unique_specialties(
         f"{dataset_choice}:{state}:dental_only", tuple(dental_specs)
     )
@@ -353,34 +375,20 @@ if spec_cols_present:
         "Specialty (any match)",
         options=specialty_options,
         default=[],
-        help="Dental specialties only (Spec_1..5 values where the matching "
-             "Grouping_N is 'Dental Providers'). Match is any-of across the "
-             "five Spec_N columns.",
+        help="Dental specialties only (Specialty 1..5 values where the "
+             "matching Specialty Grouping N is 'Dental Providers'). Match "
+             "is any-of across the five Specialty N columns.",
     )
 else:
-    # Older folders without V2 enrichment — keep raw taxonomy code filter as fallback.
-    all_tax_codes: list[str] = []
-    for c in TAXONOMY_COLS:
-        if c in df.columns:
-            all_tax_codes.extend(df[c].fillna("").tolist())
-    taxonomy_options = unique_taxonomies(f"{dataset_choice}:{state}", tuple(all_tax_codes))
-    specialties = st.sidebar.multiselect(
-        "Taxonomy codes (any match)",
-        options=taxonomy_options,
-        default=[],
-        help="Spec_1..5 columns not found in this dataset, "
-             "falling back to raw NUCC taxonomy codes.",
+    # Should not happen with V3 dental files — they always have Specialty 1..5.
+    # If we land here, the data folder probably still has V2 parquets in it;
+    # surface a clear error rather than silently rendering an unfiltered table.
+    st.warning(
+        "No Specialty 1..5 columns found in this dataset. This dashboard "
+        "expects the V3 dental schema — re-run V3_run_monthly_split.py and "
+        "V3_convert_to_parquet.py to refresh the data folder."
     )
-    # apply_filters expects Spec_* names; with no Spec_* columns it will
-    # short-circuit, so we instead inline a taxonomy-code match here.
-    if specialties:
-        tax_cols_present = [c for c in TAXONOMY_COLS if c in df.columns]
-        if tax_cols_present:
-            tmask = pd.Series(False, index=df.index)
-            for c in tax_cols_present:
-                tmask = tmask | df[c].isin(specialties)
-            df = df[tmask]
-        specialties = []  # already applied above
+    specialties = []
 
 # --- Apply filters ----------------------------------------------------------
 filtered = apply_filters(df, city_filter, zip_prefix, name_query, specialties)
