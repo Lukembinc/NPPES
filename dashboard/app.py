@@ -17,8 +17,10 @@ What's new in this revision:
   * Top-of-page Dataset selector: "Full Data" vs "Dental"
       - Full Data  -> reads <monthly_folder>/Full Data/<STATE> NPPES Extract.csv  (V2 schema; Full Data CSV is unchanged in V3)
       - Dental     -> reads <monthly_folder>/Dental/<STATE> NPPES Dental.csv      (V3 schema)
-  * Sidebar filters: city, ZIP (prefix match), name search,
-    human-readable Specialty (Specialty 1..5).
+  * Sidebar filters: city, ZIP (prefix match), NPI (contains match),
+    name search, human-readable Specialty (Specialty 1..5).
+  * "Download filtered results (CSV)" button below the table exports the
+    full filtered set (every matching row, not just the previewed top-N).
   * If the V3 enrichment columns are present (Specialty 1, Specialty
     Grouping 1, Practice Address County, Deactivation Date, ...), they're
     surfaced so you can see the cleaned data.
@@ -236,6 +238,16 @@ def unique_specialties(df_index_key: str, specs_tuple: tuple[str, ...]) -> list[
     return sorted({s for s in specs_tuple if s})
 
 
+@st.cache_data
+def to_csv_bytes(df: pd.DataFrame) -> bytes:
+    """UTF-8 CSV bytes for the filtered result set, ready for download.
+
+    Cached so repeated reruns with the same filtered DataFrame don't re-encode
+    the whole slice on every widget interaction.
+    """
+    return df.to_csv(index=False).encode("utf-8")
+
+
 # ---------------------------------------------------------------------------
 # Filtering
 # ---------------------------------------------------------------------------
@@ -243,6 +255,7 @@ def apply_filters(
     df: pd.DataFrame,
     city: str | None,
     zip_prefix: str,
+    npi_query: str,
     name_query: str,
     specialties: list[str],
 ) -> pd.DataFrame:
@@ -254,6 +267,11 @@ def apply_filters(
 
     if zip_prefix:
         out = out[out[COL_ZIP].str.startswith(zip_prefix)]
+
+    if npi_query and COL_NPI in out.columns:
+        # Contains match: a full 10-digit NPI pins a single provider (NPIs are
+        # unique), while a partial value finds any NPI containing those digits.
+        out = out[out[COL_NPI].str.contains(npi_query, regex=False, na=False)]
 
     if name_query:
         q = name_query.strip().lower()
@@ -341,6 +359,14 @@ zip_prefix = st.sidebar.text_input(
     value="",
 ).strip()
 
+# NPI: free-text input, matches the 10-digit NPI (contains match)
+npi_query = st.sidebar.text_input(
+    "NPI",
+    value="",
+    help="Match by NPI. Enter a full 10-digit NPI to pin one provider, or a "
+         "partial value to find any NPI containing those digits.",
+).strip()
+
 # Name search: free-text, matches last/first/org name
 name_query = st.sidebar.text_input(
     "Name (provider or organization)",
@@ -391,7 +417,7 @@ else:
     specialties = []
 
 # --- Apply filters ----------------------------------------------------------
-filtered = apply_filters(df, city_filter, zip_prefix, name_query, specialties)
+filtered = apply_filters(df, city_filter, zip_prefix, npi_query, name_query, specialties)
 
 # --- Result summary + table -------------------------------------------------
 total = len(df)
@@ -416,3 +442,14 @@ if show_all and match > 50_000:
     )
 
 st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+# --- Download filtered results ----------------------------------------------
+# Always exports the full filtered set (every matching row), not just the
+# previewed top-N rendered in the table above.
+st.download_button(
+    label="Download filtered results (CSV)",
+    data=to_csv_bytes(filtered),
+    file_name=f"NPPES_{state}_{dataset_choice}_filtered.csv",
+    mime="text/csv",
+    disabled=filtered.empty,
+)
