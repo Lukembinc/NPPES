@@ -447,7 +447,7 @@ st.dataframe(display_df, use_container_width=True, hide_index=True)
 # Always exports the full filtered set (every matching row), not just the
 # previewed top-N rendered in the table above.
 st.download_button(
-    label="Download filtered results (CSV)",
+    label="⬇️ Download filtered results (CSV)",
     data=to_csv_bytes(filtered),
     file_name=f"NPPES_{state}_{dataset_choice}_filtered.csv",
     mime="text/csv",
