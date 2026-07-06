@@ -518,8 +518,9 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true",
                         help="Report the plan and counts without writing any files.")
     parser.add_argument("--report", type=Path, default=None,
-                        help="Where to write the per-NPI action report CSV "
-                             "(default: alongside the Dental folder).")
+                        help="Optional: write a per-NPI action report CSV to this path. "
+                             "By default no report file is written (the run still prints "
+                             "a summary of the action counts).")
     parser.add_argument("--chunksize", type=int, default=100_000,
                         help="Rows per pandas chunk when reading weekly files.")
     args = parser.parse_args()
@@ -594,14 +595,12 @@ def main() -> int:
                   f"preserved in the backup at:\n    {backup_path}", file=sys.stderr)
         raise
 
-    report_path = args.report or (
-        dental_dir.parent / f"V1_Weekly_Changes_report_{datetime.now():%Y%m%d_%H%M%S}.csv"
-    )
-    if not args.dry_run:
-        report.to_csv(report_path, index=False)
-        print(f"\nPer-NPI report written to: {report_path}")
-    else:
-        print(f"\n--dry-run: report not written (would be {report_path}).")
+    # A report file is written only when --report is explicitly provided.
+    if args.report is not None and not args.dry_run:
+        report.to_csv(args.report, index=False)
+        print(f"\nPer-NPI report written to: {args.report}")
+    elif args.report is not None and args.dry_run:
+        print(f"\n--dry-run: report not written (would be {args.report}).")
 
     # Reconciliation finished cleanly — remove the safety-net backup unless kept.
     if backup_path is not None:
