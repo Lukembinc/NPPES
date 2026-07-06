@@ -567,24 +567,32 @@ def main() -> int:
     msa_geo = v3.load_msa_zip_to_county(geo_msa_workbook)
     spec_dict = v3.load_taxonomy_lookup(taxonomy_workbook)
 
-    # Backup before mutating.
+    # Backup before mutating. Kept as a safety net during the run; deleted on
+    # success unless --keep-backup is set, and always retained if the run errors.
+    backup_path: Path | None = None
     if not args.dry_run and not args.no_backup:
-        dest = backup_dental_dir(dental_dir)
-        print(f"Backed up Dental folder -> {dest}")
+        backup_path = backup_dental_dir(dental_dir)
+        print(f"Backed up Dental folder -> {backup_path}")
     elif args.dry_run:
         print("--dry-run: no backup, no files will be written.")
 
     print("\nReconciling...")
-    report = reconcile(
-        weekly_pfiles=weekly_pfiles,
-        dental_dir=dental_dir,
-        cols=cols,
-        msa_geo=msa_geo,
-        spec_dict=spec_dict,
-        v3=v3,
-        dry_run=args.dry_run,
-        chunksize=args.chunksize,
-    )
+    try:
+        report = reconcile(
+            weekly_pfiles=weekly_pfiles,
+            dental_dir=dental_dir,
+            cols=cols,
+            msa_geo=msa_geo,
+            spec_dict=spec_dict,
+            v3=v3,
+            dry_run=args.dry_run,
+            chunksize=args.chunksize,
+        )
+    except Exception:
+        if backup_path is not None:
+            print(f"\nERROR during reconciliation — your original extracts are "
+                  f"preserved in the backup at:\n    {backup_path}", file=sys.stderr)
+        raise
 
     report_path = args.report or (
         dental_dir.parent / f"V1_Weekly_Changes_report_{datetime.now():%Y%m%d_%H%M%S}.csv"
@@ -594,6 +602,14 @@ def main() -> int:
         print(f"\nPer-NPI report written to: {report_path}")
     else:
         print(f"\n--dry-run: report not written (would be {report_path}).")
+
+    # Reconciliation finished cleanly — remove the safety-net backup unless kept.
+    if backup_path is not None:
+        if args.keep_backup:
+            print(f"Backup retained (--keep-backup): {backup_path}")
+        else:
+            shutil.rmtree(backup_path, ignore_errors=True)
+            print(f"Backup removed after successful run: {backup_path}")
 
     print("\nDone. Re-run V3_convert_to_parquet.py to refresh the dashboard parquet.")
     return 0
